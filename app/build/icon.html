@@ -1,0 +1,62 @@
+<!doctype html><meta charset=utf-8>
+<style>html,body{margin:0;background:transparent}canvas{display:block}</style>
+<canvas id=c width=1024 height=1024></canvas>
+<script src="../renderer/texture.js"></script>
+<script>
+(async () => {
+const c = document.getElementById('c'), ctx = c.getContext('2d');
+// Brushed metal tile
+const metal = document.createElement('canvas');
+window.devicePixelRatio = 1;
+PressTexture.drawFaceplate(metal, 1024, 1024, 0x1c0);
+// macOS icon grid: 824px squircle centered, shadow beneath
+const S = 824, O = 100, r = 185;
+function squircle(x, y, s, r) { ctx.beginPath(); ctx.roundRect(x, y, s, s, r); }
+ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.45)'; ctx.shadowBlur = 40; ctx.shadowOffsetY = 18;
+squircle(O, O, S, r); ctx.fillStyle = '#999'; ctx.fill(); ctx.restore();
+ctx.save(); squircle(O, O, S, r); ctx.clip();
+ctx.drawImage(metal, 0, 0, 1024, 1024);
+// bevel
+const bev = ctx.createLinearGradient(0, O, 0, O + S); bev.addColorStop(0, 'rgba(255,255,255,.35)'); bev.addColorStop(.12, 'rgba(255,255,255,0)'); bev.addColorStop(.88, 'rgba(0,0,0,0)'); bev.addColorStop(1, 'rgba(0,0,0,.3)');
+ctx.fillStyle = bev; ctx.fillRect(O, O, S, S);
+ctx.restore();
+ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,.35)'; squircle(O + 2, O + 2, S - 4, r - 2); ctx.stroke();
+// Screws
+function screw(x, y, rad, ang) {
+  ctx.save(); ctx.translate(x, y);
+  ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.beginPath(); ctx.arc(3, 5, rad, 0, 7); ctx.fill();
+  const g = ctx.createRadialGradient(-rad * .35, -rad * .4, 0, 0, 0, rad); g.addColorStop(0, '#f8f8f8'); g.addColorStop(.6, '#a4a4a6'); g.addColorStop(1, '#5a5a5c');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, rad, 0, 7); ctx.fill();
+  ctx.rotate(ang); ctx.fillStyle = '#353536';
+  ctx.fillRect(-rad * .62, -rad * .13, rad * 1.24, rad * .26); ctx.fillRect(-rad * .13, -rad * .62, rad * .26, rad * 1.24);
+  ctx.restore();
+}
+[[180, 180, .5], [844, 180, 1.2], [180, 844, 2.1], [844, 844, .9]].forEach(([x, y, a]) => screw(x, y, 26, a));
+// VU window
+const vx = 212, vy = 250, vw = 600, vh = 400;
+ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.5)'; ctx.shadowBlur = 18; ctx.shadowOffsetY = 8;
+ctx.fillStyle = '#121213'; ctx.beginPath(); ctx.roundRect(vx - 22, vy - 22, vw + 44, vh + 44, 40); ctx.fill(); ctx.restore();
+ctx.save(); ctx.beginPath(); ctx.roundRect(vx, vy, vw, vh, 22); ctx.clip();
+const dial = ctx.createLinearGradient(0, vy, 0, vy + vh); dial.addColorStop(0, '#fff1c2'); dial.addColorStop(1, '#efcf88'); ctx.fillStyle = dial; ctx.fillRect(vx, vy, vw, vh);
+const px = vx + vw / 2, py = vy + vh * 1.08, R = vh * 0.84, sweep = 96 * Math.PI / 180;
+const ang = f => -sweep / 2 + sweep * f, pt = (a, rr) => [px + Math.sin(a) * rr, py - Math.cos(a) * rr];
+ctx.lineWidth = 6; ctx.strokeStyle = '#222'; ctx.beginPath(); ctx.arc(px, py, R, ang(0) - Math.PI / 2, ang(.78) - Math.PI / 2); ctx.stroke();
+ctx.lineWidth = 18; ctx.strokeStyle = '#c4180f'; ctx.beginPath(); ctx.arc(px, py, R + 9, ang(.78) - Math.PI / 2, ang(1) - Math.PI / 2); ctx.stroke();
+for (let i = 0; i <= 10; i++) { const a = ang(i / 10), [x1, y1] = pt(a, R), [x2, y2] = pt(a, R + (i % 2 ? 22 : 40)); ctx.lineWidth = i % 2 ? 5 : 8; ctx.strokeStyle = i / 10 > .78 ? '#b5150e' : '#222'; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); }
+ctx.fillStyle = 'rgba(0,0,0,.82)'; ctx.font = 'italic 900 92px Georgia, serif'; ctx.textAlign = 'center'; ctx.fillText('VU', px, vy + vh * .66);
+const [nx, ny] = pt(ang(.66), R + 30); ctx.lineCap = 'round';
+ctx.strokeStyle = 'rgba(0,0,0,.2)'; ctx.lineWidth = 10; ctx.beginPath(); ctx.moveTo(px + 10, py + 6); ctx.lineTo(nx + 10, ny + 6); ctx.stroke();
+ctx.strokeStyle = '#151515'; ctx.lineWidth = 8; ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(nx, ny); ctx.stroke();
+const hg = ctx.createLinearGradient(0, vy + vh - 70, 0, vy + vh); hg.addColorStop(0, '#3a3a3a'); hg.addColorStop(1, '#050505');
+ctx.fillStyle = hg; ctx.beginPath(); ctx.ellipse(px, vy + vh + 10, 130, 66, 0, Math.PI, 0); ctx.fill();
+const gl = ctx.createLinearGradient(vx, vy, vx + vw * .6, vy + vh * .7); gl.addColorStop(0, 'rgba(255,255,255,.4)'); gl.addColorStop(.45, 'rgba(255,255,255,.05)'); gl.addColorStop(1, 'rgba(255,255,255,0)');
+ctx.fillStyle = gl; ctx.fillRect(vx, vy, vw, vh);
+ctx.restore();
+// Engraved PRESS
+ctx.font = '800 92px "DIN Condensed", "DejaVu Sans Condensed", sans-serif'; ctx.textAlign = 'center';
+ctx.letterSpacing = '22px';
+ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.fillText('PRESS', 512 + 11, 806 + 3);
+ctx.fillStyle = 'rgba(32,32,34,.88)'; ctx.fillText('PRESS', 512 + 11, 806);
+document.title = 'done';
+})();
+</script>

@@ -1,0 +1,7 @@
+ProtoArt Press
+Copyright 2026 ProtoArt Press contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+Distributed builds include Electron, Chromium and Node.js; their license
+notices are listed in THIRD_PARTY_NOTICES.md and shipped inside the app at
+ProtoArt Press.app/Contents/Resources/Licenses/.

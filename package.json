@@ -1,0 +1,21 @@
+{
+  "name": "protoart-press",
+  "productName": "ProtoArt Press",
+  "version": "2.1.0",
+  "description": "Images, PDFs, video and audio made smaller, in a studio rack unit. macOS (Apple Silicon).",
+  "private": true,
+  "license": "Apache-2.0",
+  "scripts": {
+    "start": "electron app",
+    "test": "node --test tests/*.test.js",
+    "build": "bash \"Build ProtoArt Press.command\" --no-open",
+    "dmg": "bash \"Make DMG for friends.command\""
+  },
+  "devDependencies": {
+    "@electron/fuses": "1.8.0",
+    "electron": "44.7.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

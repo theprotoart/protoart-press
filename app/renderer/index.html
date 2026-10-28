@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+<title>ProtoArt Press</title>
+<link rel="stylesheet" href="rack.css">
+</head>
+<body class="finish-black pa2">
+<div id="rack">
+  <canvas id="metal"></canvas>
+  <div class="ear left drag"><div class="slot top"></div><div class="slot bottom"></div></div>
+  <div class="ear right drag"><div class="slot top"></div><div class="slot bottom"></div></div>
+  <div class="drag-strip drag"></div>
+
+  <!-- Brand plate -->
+  <div id="brand">
+    <div class="brand-name">ProtoArt</div>
+    <div class="brand-sub">PRESS</div>
+    <div class="brand-rule"></div>
+    <div class="paint small">Model PA-2 · Media Compressor</div>
+    <div class="paint tiny">Image · PDF · Video · Audio</div>
+  </div>
+
+  <!-- Status LEDs -->
+  <div id="leds">
+    <div class="led-row"><span class="led green" id="led-power"></span><span class="engr">Power</span></div>
+    <div class="led-row"><span class="led amber" id="led-active"></span><span class="engr">Active</span></div>
+    <div class="led-row"><span class="led blue" id="led-done"></span><span class="engr">Done</span></div>
+    <div class="led-row"><span class="led red" id="led-fault"></span><span class="engr">Fault</span></div>
+  </div>
+
+  <!-- VU meter -->
+  <div id="vu"><canvas id="vu-canvas"></canvas></div>
+
+  <!-- Amber readouts -->
+  <div id="readouts">
+    <div class="readout"><span class="engr cap">Time left</span><div class="window amber-glass"><div class="seg" id="ro-time"></div></div><span class="engr unit"></span></div>
+    <div class="readout"><span class="engr cap">Saved</span><div class="window amber-glass"><div class="seg" id="ro-saved"></div></div><span class="engr unit" id="ro-saved-unit">MB</span></div>
+    <div class="readout"><span class="engr cap">Reduction</span><div class="window amber-glass"><div class="seg" id="ro-pct"></div></div><span class="engr unit">%</span></div>
+  </div>
+
+  <!-- Session log -->
+  <div id="log-wrap">
+    <span class="engr label">Session log</span>
+    <div id="log" class="window">
+      <div id="log-list"></div>
+      <div id="log-empty"></div>
+      <div class="scanlines"></div>
+    </div>
+  </div>
+
+  <!-- Format modules and the global row -->
+  <div id="modules"></div>
+  <div id="globals"></div>
+  <div id="buttons">
+    <div class="rack-button"><div class="bezel"><button id="btn-load"><span class="paint">Load</span></button></div><span class="engr small">Add files ⌘O</span></div>
+    <div class="rack-button"><div class="bezel"><button id="btn-clear"><span class="paint">Clear</span></button></div><span class="engr small">Clear log</span></div>
+    <div class="rack-button"><div class="bezel"><button id="btn-reset"><span class="paint">Reset</span></button></div><span class="engr small">Defaults</span></div>
+    <div class="rack-button"><div class="bezel"><button id="btn-about"><span class="paint">About</span></button></div><span class="engr small">How it works</span></div>
+  </div>
+
+  <div id="tapes"></div>
+
+  <!-- Operator's card -->
+  <div id="about" hidden>
+    <div class="card" role="dialog" aria-label="About ProtoArt Press">
+      <button class="close" id="about-close" title="Close (Esc)">×</button>
+      <header>
+        <h1>PA-2 Operator's Card</h1>
+        <p class="lede">ProtoArt Press makes images, PDFs, video and audio smaller. Drop files or whole
+        folders anywhere on the panel, or press <b>LOAD</b> (⌘O). Each file goes to its module, and every
+        result is checked before it's kept. Everything runs on your Mac; nothing is uploaded.</p>
+      </header>
+      <div class="cols">
+        <section>
+          <h2>The modules</h2>
+          <p>Each format has its own module, and they all work the same way:</p>
+          <ul>
+            <li><b>IN</b> (green): when lit, that module presses its files. Switch it off and those files are skipped.</li>
+            <li><b>GENTLE · BALANCED · AGGRESSIVE</b> (amber): how hard to compress. Only one lights at a time.</li>
+            <li><b>Knob</b>: an optional size limit. KEEP or FULL never changes the size, and nothing is ever enlarged.</li>
+            <li><b>Blue buttons</b>: a format choice for that module.</li>
+          </ul>
+          <p>The lamp at the top of a module glows while it's working. Double-click a knob or a quality button to reset it.</p>
+
+          <h2>IMAGE · JPG, PNG</h2>
+          <p>STRENGTH aims for no visible change: about JPEG quality 90 / 85 / 80, checked against the original with a
+          perceptual comparison (SSIM). MAX SIZE shrinks the long edge. PNG <b>LOSSLESS</b> keeps every pixel;
+          <b>REDUCE</b> allows a 256-color palette only when that's invisible (screenshots, icons, graphics).</p>
+
+          <h2>PDF</h2>
+          <p>Only the pictures inside are recompressed: text, fonts and drawings stay sharp and selectable.
+          Press measures how large each picture is actually shown on the page, resizes it to the RESOLUTION
+          you pick (150 dpi suits screens and office printing; 300 keeps print quality) and re-encodes it with
+          the same perceptual check used for photos, never going below JPEG quality 80 / 75 / 56.
+          Black-and-white pictures are stored as one channel. COLOR <b>GRAY</b> makes every picture
+          black-and-white. Unusual PDFs are handled by macOS instead. Password-protected PDFs are left alone.</p>
+
+          <h2>VIDEO · MP4, MOV, M4V</h2>
+          <p>Re-encodes the picture with Apple's hardware encoder, with a keyframe at least every 5 seconds so
+          seeking stays quick. Compressed sound is copied untouched; uncompressed sound becomes 160 kbps AAC. RESOLUTION scales
+          down (4K, 1440, 1080, 720, 540). <b>HEVC</b> is about a third smaller; <b>H.264</b> plays everywhere.
+          Phone videos keep their orientation. HDR and copy-protected videos are left as they are for now.</p>
+
+          <h2>AUDIO · WAV, AIFF, FLAC, MP3, M4A</h2>
+          <p><b>AAC</b> at 256 / 192 / 128 kbps for stereo (mono gets half), or <b>LOSSLESS</b> (Apple Lossless):
+          bit-perfect and about half the size of WAV. Results are .m4a files. SAMPLE RATE can lower the rate
+          (AAC tops out at 48 kHz). Surround files are left alone. Song tags (title, artist, artwork) aren't
+          carried over yet.</p>
+        </section>
+        <section>
+          <h2>MINIMUM SAVING</h2>
+          <p>A result is only used if it's at least this much smaller (1, 3, 5 or 10%). If it isn't, the
+          original is kept as is and the log says <b>KEPT</b>. It never changes quality; it just skips
+          files that would barely shrink. Resized images and videos are always kept.</p>
+
+          <h2>OUTPUT</h2>
+          <ul>
+            <li><b>COPY</b>: results go into a "Pressed" folder beside the originals, which aren't touched.
+            Files that didn't shrink are copied too, so the folder is complete.</li>
+            <li><b>REPLACE</b>: swaps each file in place. Originals go to the Trash, so you can still get them back.
+            Audio becomes .m4a beside where the original was.</li>
+          </ul>
+
+          <h2>METADATA</h2>
+          <ul>
+            <li><b>KEEP</b>: camera, date, location and keywords all stay.</li>
+            <li><b>NO GPS</b> (default): removes only the location from photos and videos.</li>
+            <li><b>STRIP</b>: removes everything, including a PDF's title, author and keywords.</li>
+          </ul>
+          <p>Color profiles always stay, and photos are stored upright, so nothing comes out sideways or with shifted colors.</p>
+
+          <h2>Meters</h2>
+          <ul>
+            <li><b>VU</b>: overall completion of the batch, weighted by file size. The lamp lights while it's working.</li>
+            <li><b>TIME LEFT</b>, <b>SAVED</b> and <b>REDUCTION</b>: the batch estimate, space saved this session, and the overall percentage.</li>
+            <li><b>LEDs</b>: POWER · ACTIVE blinks while working · DONE (blue) when a batch finishes · FAULT if a file failed.</li>
+          </ul>
+
+          <h2>Session log</h2>
+          <p>Badges show the type: <b>IMG</b> <b>PDF</b> <b>VID</b> <b>AUD</b>. <b>WAIT</b> queued · <b>%</b> working ·
+          <b>−xx%</b> saved · <b>KEPT</b> left as is (hover for why) · <b>FAULT</b> couldn't be processed.
+          Double-click a row to show the file in Finder. <b>CLEAR</b> empties the log; it doesn't touch any files.</p>
+          <p class="note">Shortcuts (symlinks) inside folders are skipped, so only what you chose is touched.
+          Images over 150 megapixels or 512 MB are left alone.</p>
+
+          <h2>RESET</h2>
+          <p>Puts every control back to its default: all modules IN, BALANCED everywhere, image FULL + REDUCE,
+          PDF 150 dpi in color, video KEEP + HEVC, audio KEEP + AAC, 3%, COPY, NO GPS.</p>
+
+          <h2>Panel finish</h2>
+          <div class="finish">
+            <button data-finish="black">Black</button>
+            <button data-finish="silver">Silver</button>
+          </div>
+        </section>
+      </div>
+      <footer>ProtoArt Press · Model PA-2 · v2.1 · Everything runs on your Mac; nothing is uploaded. <span id="about-sandbox"></span></footer>
+    </div>
+  </div>
+</div>
+<script src="texture.js"></script>
+<script src="parts.js"></script>
+<script src="rack.js"></script>
+</body>
+</html>
