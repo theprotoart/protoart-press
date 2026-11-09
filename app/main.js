@@ -1,7 +1,7 @@
 // ProtoArt Press: Electron main process. Owns the file queue, file I/O, the PNG worker pool,
 // and the macOS helper processes for PDF, video and audio.
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, protocol, session } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, protocol, session, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { Worker } = require('worker_threads');
@@ -510,6 +510,24 @@ function lockDownSession() {
   });
 }
 
+// The panel is drawn for 1180 × 780. On a screen with less room (a 13" MacBook at a larger text size, or with the
+// Dock showing), the whole panel scales down to fit, so its bottom row (LOAD, CLEAR, the output settings) stays on
+// screen. Re-fitted when it moves to another display or the display changes.
+const PANEL_W = 1180, PANEL_H = 780;
+function fitWindow() {
+  if (!win || win.isDestroyed()) return;
+  const area = screen.getDisplayMatching(win.getBounds()).workArea;
+  const z = Math.max(0.6, Math.min(1, (area.width - 16) / PANEL_W, (area.height - 8) / PANEL_H));
+  const w = Math.round(PANEL_W * z), h = Math.round(PANEL_H * z);
+  const [cw, ch] = win.getContentSize();
+  if (cw !== w || ch !== h) win.setContentSize(w, h);
+  if (Math.abs(win.webContents.getZoomFactor() - z) > 0.001) win.webContents.setZoomFactor(z);
+  // keep it on screen
+  const b = win.getBounds();
+  const x = Math.min(Math.max(b.x, area.x), area.x + area.width - b.width), y = Math.min(Math.max(b.y, area.y), area.y + area.height - b.height);
+  if (x !== b.x || y !== b.y) win.setPosition(Math.round(x), Math.round(y));
+}
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1180, height: 780, useContentSize: true, resizable: false, fullscreenable: false,
@@ -538,9 +556,14 @@ function createWindow() {
   });
   win.loadURL(PANEL_URL);
   win.once('ready-to-show', () => {
+    fitWindow();
+    win.center();
     win.show();
     if (pendingOpen.length) addPaths(pendingOpen.splice(0));
   });
+  let fitTimer = null;
+  win.on('moved', () => { clearTimeout(fitTimer); fitTimer = setTimeout(fitWindow, 250); });
+  win.webContents.on('did-finish-load', fitWindow); // the zoom is per page load
   win.on('closed', () => {
     win = null;
     for (const job of jpegJobs.values()) job.reject(new Error('Window closed'));
@@ -554,6 +577,7 @@ app.whenReady().then(() => {
   lockDownSession();
   buildMenu();
   createWindow();
+  for (const ev of ['display-metrics-changed', 'display-added', 'display-removed']) screen.on(ev, () => fitWindow());
 });
 app.on('window-all-closed', () => app.quit());
 app.on('will-quit', () => { stopPDF(); media.stopAll(); });

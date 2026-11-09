@@ -1,7 +1,7 @@
 {
   "name": "protoart-press",
   "productName": "ProtoArt Press",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Images, PDFs, video and audio made smaller, in a studio rack unit. macOS (Apple Silicon).",
   "private": true,
   "license": "Apache-2.0",

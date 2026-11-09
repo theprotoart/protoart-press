@@ -1,7 +1,7 @@
 {
   "name": "protoart-press",
   "productName": "ProtoArt Press",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Smaller images, PDFs, video and audio, made with macOS's own engines.",
   "main": "main.js",
   "private": true

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.1
+
+- The window fits smaller screens: where the screen has less room than the panel (a 13" MacBook at a larger text
+  size, or with the Dock showing), the whole panel scales down to fit (to 60% at most), so LOAD, CLEAR and the
+  output settings along the bottom stay on screen. It re-fits when moved to another display. Nothing changes on
+  larger screens.
 ## 2.1.0: Own PDF picture optimizer
 
 - PDFs are now read and rewritten by Press itself (no new programs): it finds every picture, works out
