@@ -400,3 +400,45 @@ html:has(body.pa2) { width: 1180px; height: 780px; }
 .pa2 #log .row .name .badge { flex: none; }
 .pa2 #log .row > div:nth-child(2) { min-width: 0; overflow: hidden; }
 .pa2 #log .row .detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- MODE switch and the CONVERT unit (2.2) ---------- */
+#mode { position: absolute; left: 326px; top: 160px; }
+#mode .bg-title { font-size: 9px; }
+#mode .pbtn .cap-text { font-size: 8px; letter-spacing: 0.08em; }
+[hidden] { display: none !important; }
+.bgroup.dim { opacity: 0.35; filter: saturate(0.3); pointer-events: none; }
+
+#convert { position: absolute; left: 466px; top: 202px; width: 646px; height: 456px; padding-top: 20px; }
+#convert .mhead { margin-bottom: 2px; }
+#convert .ucols { display: flex; width: 100%; flex: 1; padding: 0 6px 22px; box-sizing: border-box; }
+#convert .ucol { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: space-evenly; gap: 2px; min-width: 0;
+  border-right: 1px solid rgba(0,0,0,0.35); box-shadow: 1px 0 0 rgba(255,255,255,0.06); }
+#convert .ucol:last-child { border-right: 0; box-shadow: none; }
+#convert .msec { margin-top: 6px; width: 100%; }
+#convert .vertical .pbtn { width: 96px; height: 23px; }
+
+/* Dymo-style label tape: the rename pattern, watermark text and recipes */
+.dymo { width: 136px; box-sizing: border-box; height: 24px; margin-top: 2px; padding: 0 7px; border-radius: 3px;
+  border: 0; outline: none; font: 700 11px/24px Menlo, Monaco, monospace; letter-spacing: 0.04em; color: #f4f1e8;
+  background: linear-gradient(180deg, #1b1b1b, #0b0b0b); box-shadow: inset 0 1px 3px rgba(0,0,0,0.9), 0 1px 0 rgba(255,255,255,0.12);
+  text-shadow: 0 1px 0 rgba(0,0,0,0.9); -webkit-appearance: none; appearance: none; }
+.dymo::placeholder { color: rgba(244,241,232,0.35); }
+.dymo:focus { box-shadow: inset 0 1px 3px rgba(0,0,0,0.9), 0 0 0 2px rgba(120,180,255,0.6); }
+select.dymo { cursor: pointer; padding-right: 18px;
+  background: linear-gradient(45deg, transparent 50%, #c9c2b2 50%) calc(100% - 11px) 10px / 5px 5px no-repeat,
+              linear-gradient(135deg, #c9c2b2 50%, transparent 50%) calc(100% - 6px) 10px / 5px 5px no-repeat,
+              linear-gradient(180deg, #1b1b1b, #0b0b0b); }
+.tokens { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; margin-top: 5px; max-width: 140px; }
+.chip { border: 0; border-radius: 3px; padding: 4px 6px; cursor: pointer; font: 700 8.5px/1 "Helvetica Neue", Arial, sans-serif;
+  letter-spacing: 0.08em; color: rgba(220,212,195,0.8); background: linear-gradient(180deg, #4a4741, #24221f);
+  box-shadow: 0 2px 0 #000, inset 0 1px 0 rgba(255,255,255,0.18); text-shadow: 0 -1px 0 #000; }
+.chip:active { transform: translateY(1px); box-shadow: 0 1px 0 #000; }
+.chip:disabled { opacity: 0.4; cursor: default; }
+.chip.wide { width: 136px; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip.bad { color: #ffb4a0; }
+#convert .example { font-size: 7.5px; letter-spacing: 0.06em; margin-top: 5px; max-width: 140px; overflow: hidden; text-overflow: ellipsis;
+  text-transform: none; opacity: 0.8; }
+.posgrid { display: grid; grid-template-columns: repeat(3, 26px); gap: 4px; padding: 4px; border-radius: 4px;
+  background: rgba(0,0,0,0.45); box-shadow: inset 0 1px 3px rgba(0,0,0,0.8), 0 1px 0 rgba(255,255,255,0.12); }
+.posgrid .pbtn { width: 26px; height: 16px; }
+#convert .pairs { display: flex; gap: 8px; margin-top: 6px; }

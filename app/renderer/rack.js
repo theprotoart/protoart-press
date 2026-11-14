@@ -16,6 +16,9 @@ const DEFAULTS = {
   pdf: { on: true, quality: 'balanced', dpi: 150, gray: false },
   video: { on: true, quality: 'balanced', maxEdge: 0, codec: 'hevc' },
   audio: { on: true, quality: 'balanced', sampleRate: 0, lossless: false },
+  mode: 'compress',
+  convert: { format: 'jpeg', quality: 85, size: 0, fit: 'long', rename: '{name}',
+    mark: { on: false, kind: 'text', text: '', pos: 8, opacity: 50, size: 'm', dark: false } },
 };
 const clone = o => JSON.parse(JSON.stringify(o));
 
@@ -26,6 +29,8 @@ try {
     if (saved[k] === undefined) continue;
     settings[k] = typeof DEFAULTS[k] === 'object' ? { ...DEFAULTS[k], ...saved[k] } : saved[k];
   }
+  if (saved.convert) settings.convert.mark = { ...DEFAULTS.convert.mark, ...(saved.convert.mark || {}) };
+  if (settings.mode !== 'convert') settings.mode = 'compress';
   if (saved.finish) settings.finish = saved.finish;
   else { const old = JSON.parse(localStorage.getItem('press-settings') || '{}'); if (old.finish) settings.finish = old.finish; }
 } catch {}
@@ -37,6 +42,7 @@ function saveSettings() {
   }
   renderTapes();
   renderModules();
+  renderMode();
 }
 
 // ------------------------------------------------------------------ Build the panel
@@ -177,6 +183,187 @@ controls.meta = buttonGroup(g, { title: 'Metadata', labels: ['KEEP', 'NO GPS', '
   onChange: i => { settings.metadata = METADATA[i]; saveSettings(); } });
 controls.meta.el.title = 'KEEP everything · NO GPS removes only the location · STRIP removes camera, date, location and document info.';
 
+// ------------------------------------------------------------------ MODE and the CONVERT unit
+
+// MODE: COMPRESS (the four format modules) or CONVERT (one wide unit: format, size, name, watermark, recipes).
+const modeBox = el('div', { id: 'mode' }, $('rack'));
+controls.mode = buttonGroup(modeBox, { title: 'Mode', labels: ['COMPRESS', 'CONVERT'], index: settings.mode === 'convert' ? 1 : 0,
+  width: 56, lamp: 'green', onChange: i => { settings.mode = i ? 'convert' : 'compress'; saveSettings(); } });
+controls.mode.el.title = 'COMPRESS makes files smaller with the four modules. CONVERT changes photos to another format, size or name, and can add a watermark.';
+
+const CV = {
+  formats: ['jpeg', 'png', 'heic', 'webp', 'tiff'], formatLabels: ['JPEG', 'PNG', 'HEIC', 'WEBP', 'TIFF'],
+  qualities: [60, 70, 80, 85, 90, 95, 100], qualityLabels: ['60', '70', '80', '85', '90', '95', 'MAX'],
+  sizes: [0, 3840, 2560, 1920, 1600, 1280, 1080, 800, -50, -25], sizeLabels: ['FULL', '3840', '2560', '1920', '1600', '1280', '1080', '800', '50%', '25%'],
+  fits: ['long', 'width', 'height'],
+};
+const cv = () => settings.convert;
+const setCV = (field, value) => { settings.convert = { ...cv(), [field]: value }; saveSettings(); };
+const setMark = (field, value) => { settings.convert = { ...cv(), mark: { ...cv().mark, [field]: value } }; saveSettings(); };
+
+const unit = el('div', { class: 'module wide f-graphite', id: 'convert' }, $('rack'));
+el('div', { class: 'mscrew t' }, unit).appendChild(screw(14, 52));
+el('div', { class: 'mscrew b' }, unit).appendChild(screw(14, -21));
+const uhead = el('div', { class: 'mhead' }, unit);
+const ulamp = el('span', { class: 'led mini amber mlamp' }, uhead);
+el('div', { class: 'mname', text: 'CONVERT' }, uhead);
+el('div', { class: 'engr mfmt', text: 'IN: JPG · PNG · HEIC · TIFF · WEBP · AVIF · RAW · PSD' }, uhead);
+const ucols = el('div', { class: 'ucols' }, unit);
+const ucol = () => el('div', { class: 'ucol' }, ucols);
+const usec = (col, title) => { const s = el('div', { class: 'msec' }, col); if (title) el('div', { class: 'engr bg-title', text: title }, s); return s; };
+
+// 1 · format and quality
+const c1 = ucol();
+controls.cvFormat = buttonGroup(usec(c1), { title: 'Format', labels: CV.formatLabels, index: Math.max(0, CV.formats.indexOf(cv().format)),
+  vertical: true, lamp: 'blue', onChange: i => setCV('format', CV.formats[i]) });
+controls.cvFormat.el.title = 'JPEG plays everywhere · PNG keeps every pixel and transparency · HEIC is about half the size of JPEG (Apple devices) · WEBP for the web · TIFF for print and editing (lossless).';
+const qk = usec(c1);
+controls.cvQuality = compactKnob(qk, { title: 'Quality', labels: CV.qualityLabels, index: Math.max(0, CV.qualities.indexOf(cv().quality)),
+  size: 40, radius: 40, onChange: i => setCV('quality', CV.qualities[i]), onReset: () => controls.cvQuality.change(CV.qualities.indexOf(85)) });
+qk.title = 'Quality for JPEG, HEIC and WEBP (PNG and TIFF are lossless). 85 looks the same as the original for most photos. Double-click to reset.';
+
+// 2 · size
+const c2 = ucol();
+const sk = usec(c2);
+controls.cvSize = compactKnob(sk, { title: 'Size · px', labels: CV.sizeLabels, index: Math.max(0, CV.sizes.indexOf(cv().size)),
+  size: 44, radius: 46, onChange: i => setCV('size', CV.sizes[i]), onReset: () => controls.cvSize.change(0) });
+sk.title = 'Shrinks pictures to this many pixels (along the side picked below), or to a percentage. FULL keeps the size; nothing is ever enlarged. Double-click to reset.';
+controls.cvFit = buttonGroup(usec(c2), { title: 'Fit', labels: ['LONG', 'WIDTH', 'HEIGHT'], index: Math.max(0, CV.fits.indexOf(cv().fit)),
+  width: 44, lamp: 'blue', onChange: i => setCV('fit', CV.fits[i]), caption: 'WHICH SIDE THE SIZE MEANS' });
+controls.cvFit.el.title = 'LONG: the longer side · WIDTH or HEIGHT: that side, whatever the shape. Percentages scale both.';
+
+// 3 · rename and recipes
+const c3 = ucol();
+const rn = usec(c3, 'Rename');
+const renameIn = el('input', { class: 'dymo', type: 'text', maxlength: 120, spellcheck: 'false' }, rn);
+renameIn.value = cv().rename;
+const tokRow = el('div', { class: 'tokens' }, rn);
+const example = el('div', { class: 'engr example' }, rn);
+const renderExample = () => {
+  const n = (renameIn.value || '{name}').replace(/\{name\}/g, 'IMG_0042').replace(/\{#\}/g, '001').replace(/\{date\}/g, '2026-11-14')
+    .replace(/\{w\}/g, '1920').replace(/\{h\}/g, '1440').replace(/[\/:\\]/g, '-');
+  example.textContent = (n.trim() || 'IMG_0042') + ({ jpeg: '.jpg', png: '.png', heic: '.heic', webp: '.webp', tiff: '.tif' }[cv().format] || '');
+};
+const putToken = t => {
+  const a = renameIn.selectionStart ?? renameIn.value.length, b = renameIn.selectionEnd ?? a;
+  renameIn.setRangeText(t, a, b, 'end'); renameIn.focus(); renameIn.dispatchEvent(new Event('input'));
+};
+for (const [label, t, tip] of [['NAME', '{name}', 'The original name'], ['#', '{#}', 'Numbers in the order added: 001, 002…'],
+  ['DATE', '{date}', 'The day the photo was taken (or the file’s date)'], ['W×H', '{w}×{h}', 'The new width and height']]) {
+  const b = el('button', { class: 'chip', type: 'button', text: label, title: `${tip}: ${t}` }, tokRow);
+  b.addEventListener('click', () => putToken(t));
+}
+renameIn.addEventListener('input', () => {
+  const v = renameIn.value.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 120);
+  if (v !== renameIn.value) renameIn.value = v;
+  renderExample(); setCV('rename', v || '{name}');
+});
+renameIn.title = 'The new name. Use the buttons to add the original name, a number, the date or the size. Existing files are never overwritten in place.';
+
+const rc = usec(c3, 'Recipes');
+const recipeSel = el('select', { class: 'dymo' }, rc);
+const recipeName = el('input', { class: 'dymo', type: 'text', maxlength: 30, placeholder: 'name this recipe', spellcheck: 'false' }, rc);
+const recipeBtns = el('div', { class: 'tokens' }, rc);
+const saveB = el('button', { class: 'chip', type: 'button', text: 'SAVE', title: 'Save every CONVERT setting under this name' }, recipeBtns);
+const delB = el('button', { class: 'chip', type: 'button', text: 'DELETE', title: 'Delete the chosen recipe' }, recipeBtns);
+const loadRecipes = () => { try { const r = JSON.parse(localStorage.getItem('press-recipes') || '[]'); return Array.isArray(r) ? r.filter(x => x && typeof x.name === 'string' && x.convert) : []; } catch { return []; } };
+const storeRecipes = r => { try { localStorage.setItem('press-recipes', JSON.stringify(r.slice(0, 30))); } catch {} };
+function renderRecipes(selected = '') {
+  const list = loadRecipes();
+  recipeSel.replaceChildren(el('option', { text: list.length ? 'Choose a recipe…' : 'No recipes yet' }));
+  for (const r of list) { const o = el('option', { text: r.name }, recipeSel); o.value = r.name; }
+  recipeSel.value = selected;
+  if (recipeSel.selectedIndex < 0) recipeSel.selectedIndex = 0;
+  delB.disabled = !recipeSel.value || recipeSel.selectedIndex === 0;
+}
+recipeSel.addEventListener('change', () => {
+  const r = loadRecipes().find(x => x.name === recipeSel.value);
+  delB.disabled = !r;
+  if (!r) return;
+  settings.convert = { ...clone(DEFAULTS.convert), ...r.convert, mark: { ...DEFAULTS.convert.mark, ...(r.convert.mark || {}) } };
+  recipeName.value = r.name;
+  syncConvertControls(); saveSettings();
+});
+saveB.addEventListener('click', () => {
+  const name = recipeName.value.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 30) || `Recipe ${loadRecipes().length + 1}`;
+  const list = loadRecipes().filter(x => x.name !== name);
+  list.push({ name, convert: clone(cv()) });
+  list.sort((a, b) => a.name.localeCompare(b.name));
+  storeRecipes(list); recipeName.value = name; renderRecipes(name);
+});
+delB.addEventListener('click', () => {
+  const name = recipeSel.value;
+  storeRecipes(loadRecipes().filter(x => x.name !== name)); recipeName.value = ''; renderRecipes();
+});
+rc.title = 'A recipe remembers every CONVERT setting (format, quality, size, name, watermark). Pick one to use it again.';
+
+// 4 · watermark
+const c4 = ucol();
+const wm = usec(c4);
+controls.cvMark = latchButton(wm, { label: 'ON', on: cv().mark.on, lamp: 'amber', title: 'Watermark', onChange: v => setMark('on', v) });
+controls.cvKind = buttonGroup(usec(c4), { labels: ['TEXT', 'LOGO'], index: cv().mark.kind === 'logo' ? 1 : 0, width: 48, lamp: 'blue',
+  onChange: i => { setMark('kind', i ? 'logo' : 'text'); renderMarkKind(); } });
+const markText = el('input', { class: 'dymo', type: 'text', maxlength: 80, placeholder: '© your name', spellcheck: 'false' }, c4);
+markText.value = cv().mark.text;
+markText.addEventListener('input', () => { const v = markText.value.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 80); if (v !== markText.value) markText.value = v; setMark('text', v); });
+const logoB = el('button', { class: 'chip wide', type: 'button', text: 'CHOOSE LOGO…', title: 'A PNG (transparent background works best) or JPEG' }, c4);
+logoB.addEventListener('click', async () => {
+  if (!api) return;
+  const r = await api.chooseLogo();
+  if (r) showLogo(r.logo, r.error);
+});
+function showLogo(name, error) { logoB.textContent = error ? error.toUpperCase() : name ? name : 'CHOOSE LOGO…'; logoB.classList.toggle('bad', !!error); }
+function renderMarkKind() { const logo = cv().mark.kind === 'logo'; markText.hidden = logo; logoB.hidden = !logo; }
+const ps = usec(c4, 'Position');
+const grid = el('div', { class: 'posgrid' }, ps);
+const posBtns = Array.from({ length: 9 }, (_, i) => {
+  const b = el('button', { class: 'pbtn lamp-amber', type: 'button', title: ['Top left', 'Top', 'Top right', 'Left', 'Centre', 'Right', 'Bottom left', 'Bottom', 'Bottom right'][i] }, grid);
+  el('span', { class: 'cap-face' }, b);
+  b.addEventListener('click', () => { setMark('pos', i); renderPos(); });
+  return b;
+});
+const renderPos = () => posBtns.forEach((b, i) => b.classList.toggle('lit', i === cv().mark.pos));
+controls.cvOpacity = buttonGroup(usec(c4), { title: 'Opacity', labels: ['25', '50', '75', '100'], index: Math.max(0, [25, 50, 75, 100].indexOf(cv().mark.opacity)),
+  width: 30, onChange: i => setMark('opacity', [25, 50, 75, 100][i]) });
+const sz = el('div', { class: 'pairs' }, c4);
+controls.cvMarkSize = buttonGroup(sz, { title: 'Size', labels: ['S', 'M', 'L'], index: Math.max(0, ['s', 'm', 'l'].indexOf(cv().mark.size)),
+  width: 22, onChange: i => setMark('size', ['s', 'm', 'l'][i]) });
+controls.cvInk = buttonGroup(sz, { title: 'Ink', labels: ['LIGHT', 'DARK'], index: cv().mark.dark ? 1 : 0, width: 38, lamp: 'blue',
+  onChange: i => setMark('dark', i === 1) });
+c4.title = 'A watermark on every converted picture: your text, or a logo, in a corner or the centre.';
+
+/** After a recipe or RESET: every CONVERT control shows the settings. */
+function syncConvertControls() {
+  const c = cv();
+  controls.cvFormat.set(Math.max(0, CV.formats.indexOf(c.format)));
+  controls.cvQuality.set(Math.max(0, CV.qualities.indexOf(c.quality)));
+  controls.cvSize.set(Math.max(0, CV.sizes.indexOf(c.size)));
+  controls.cvFit.set(Math.max(0, CV.fits.indexOf(c.fit)));
+  renameIn.value = c.rename; renderExample();
+  controls.cvMark.set(c.mark.on);
+  controls.cvKind.set(c.mark.kind === 'logo' ? 1 : 0);
+  markText.value = c.mark.text;
+  controls.cvOpacity.set(Math.max(0, [25, 50, 75, 100].indexOf(c.mark.opacity)));
+  controls.cvMarkSize.set(Math.max(0, ['s', 'm', 'l'].indexOf(c.mark.size)));
+  controls.cvInk.set(c.mark.dark ? 1 : 0);
+  renderMarkKind(); renderPos();
+}
+renderExample(); renderMarkKind(); renderPos(); renderRecipes();
+if (api && api.convertInfo) api.convertInfo().then(r => r && showLogo(r.logo));
+
+/** Shows the four modules or the CONVERT unit, and labels the shared controls for the mode. */
+function renderMode() {
+  const convert = settings.mode === 'convert';
+  $('modules').hidden = convert;
+  unit.hidden = !convert;
+  controls.saving.el.classList.toggle('dim', convert);
+  controls.output.el.querySelector('.bg-caption').textContent = convert ? 'COPY → "CONVERTED" FOLDER' : 'COPY → "PRESSED" FOLDER';
+  controls.meta.el.querySelector('.bg-caption').textContent = convert ? 'CAMERA DETAILS: JPEG → JPEG ONLY' : 'NO GPS REMOVES LOCATION ONLY';
+  $('brand').querySelector('.paint.small').textContent = convert ? 'Model PA-2 · Media Converter' : 'Model PA-2 · Media Compressor';
+  renderEmptyTapes();
+  renderExample();
+}
+
 function renderModules() {
   for (const m of MODULES) moduleEls[m.key].mod.classList.toggle('off', !settings[m.key].on);
 }
@@ -186,6 +373,7 @@ function updateModuleLamps(items) {
     const busy = items.some(i => i.status === 'working' && m.badges.includes(i.badge));
     moduleEls[m.key].lamp.classList.toggle('on', busy);
   }
+  ulamp.classList.toggle('on', items.some(i => i.status === 'working' && i.converted));
 }
 
 // ------------------------------------------------------------------ Masking tape
@@ -195,9 +383,16 @@ function placeTape(t, x, y) { t.style.left = x + 'px'; t.style.top = y + 'px'; t
 const trashTape = placeTape(tape('originals → Trash!', { size: 11.5, angle: -4, seed: 33 }), 624, 708);
 trashTape.classList.add('fade');
 const emptyTapes = $('log-empty');
-emptyTapes.appendChild(tape('drop files here', { size: 25, angle: -3, seed: 3 }));
-emptyTapes.appendChild(tape('images · PDFs · video · audio', { size: 15, angle: 2.5, seed: 9 }));
-emptyTapes.appendChild(tape('…or a whole folder. or hit LOAD', { size: 13, angle: -1.5, seed: 14 }));
+let tapesFor = '';
+function renderEmptyTapes() {
+  const convert = settings.mode === 'convert';
+  if (tapesFor === settings.mode) return;
+  tapesFor = settings.mode;
+  emptyTapes.replaceChildren(
+    tape(convert ? 'drop photos here' : 'drop files here', { size: 25, angle: -3, seed: 3 }),
+    tape(convert ? 'HEIC · JPG · PNG · TIFF · WebP · RAW' : 'images · PDFs · video · audio', { size: 15, angle: 2.5, seed: 9 }),
+    tape('…or a whole folder. or hit LOAD', { size: 13, angle: -1.5, seed: 14 }));
+}
 
 function renderTapes() {
   trashTape.classList.toggle('hidden', settings.outputMode !== 'replace');
@@ -322,7 +517,7 @@ function renderLog() {
     switch (it.status) {
       case 'queued': result = 'WAIT'; on = false; break;
       case 'working': result = `${Math.round(it.progress * 100)}%`; blink = true; firstWorking = firstWorking || r.root; break;
-      case 'done': detail = `${fmt(it.originalBytes)} → ${fmt(it.newBytes)}  ${it.detail}`; result = `−${pct}%`; cls = 'good'; led = 'green'; break;
+      case 'done': detail = `${fmt(it.originalBytes)} → ${fmt(it.newBytes)}  ${it.detail}`; result = it.converted ? (pct >= 0 ? `−${pct}%` : `+${-pct}%`) : `−${pct}%`; cls = 'good'; led = 'green'; break;
       case 'kept': detail = `${fmt(it.originalBytes)}  ${it.detail}`; result = 'KEPT'; break;
       case 'failed': detail = it.detail; result = 'FAULT'; cls = 'bad'; led = 'red'; break;
     }
@@ -354,10 +549,12 @@ $('btn-clear').addEventListener('click', () => api && api.clear());
 
 // RESET: every control back to its default (the panel finish is a preference and stays).
 function resetAll() {
-  const finish = settings.finish;
+  const finish = settings.finish, mode = settings.mode;
   settings = clone(DEFAULTS);
   if (finish) settings.finish = finish;
+  settings.mode = mode; // RESET keeps the mode you're in (and your saved recipes)
   for (const c of Object.values(controls.modules)) c.reset();
+  syncConvertControls();
   controls.saving.set(SAVINGS.indexOf(DEFAULTS.minimumSavingsPercent));
   controls.output.set(DEFAULTS.outputMode === 'replace' ? 1 : 0);
   controls.meta.set(METADATA.indexOf(DEFAULTS.metadata));
@@ -415,11 +612,35 @@ function dispatch() {
   }
 }
 
+// ------------------------------------------------------------------ CONVERT worker pool
+
+const cworkers = [new Worker('convert-worker.js'), new Worker('convert-worker.js')].map(w => ({ w, busy: false }));
+const cjobs = [];
+function dispatchConvert() {
+  for (const slot of cworkers) {
+    if (slot.busy || !cjobs.length) continue;
+    const job = cjobs.shift();
+    slot.busy = true;
+    slot.w.onmessage = e => {
+      const m = e.data;
+      if (!m.done) return api.convertProgress(job.id, m.progress);
+      slot.busy = false;
+      api.convertResult(job.id, m.error ? { error: m.error } : m.kept ? { kept: m.kept }
+        : { data: new Uint8Array(m.data), width: m.width, height: m.height, taken: m.taken, carried: m.carried, note: m.note });
+      dispatchConvert();
+    };
+    const bytes = job.bytes.buffer.slice(job.bytes.byteOffset, job.bytes.byteOffset + job.bytes.byteLength);
+    const logo = job.logo ? job.logo.buffer.slice(job.logo.byteOffset, job.logo.byteOffset + job.logo.byteLength) : null;
+    slot.w.postMessage({ id: job.id, bytes, opts: job.opts, logo }, logo ? [bytes, logo] : [bytes]);
+  }
+}
+
 // ------------------------------------------------------------------ Go
 
 if (api) {
   api.onQueue(q => { queue = q; renderLog(); updateMeters(); });
   api.onJpegJob(job => { jobs.push(job); dispatch(); });
+  if (api.onConvertJob) api.onConvertJob(job => { cjobs.push(job); dispatchConvert(); });
 }
 window.__preview = q => { queue = q; renderLog(); updateMeters(); };
 saveSettings();

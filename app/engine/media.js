@@ -9,6 +9,7 @@ const path = require('path');
 const OSASCRIPT = '/usr/bin/osascript';
 const AFCONVERT = '/usr/bin/afconvert';
 const AFINFO = '/usr/bin/afinfo';
+const SIPS = '/usr/bin/sips';
 const JXA = path.join(__dirname, 'jxa');
 
 // What each STRENGTH/QUALITY button means per format.
@@ -151,4 +152,28 @@ async function audio(job, onProgress) {
   return { detail };
 }
 
-module.exports = { pdf, video, audio, runTool, stopAll, PDF_QUALITY, VIDEO_QUALITY, AUDIO_KBPS_PER_CHANNEL, VIDEO_TYPES };
+/**
+ * CONVERT: reads a picture the panel can't decode (HEIC, TIFF, RAW, PSD…) with macOS's Core Image and writes it
+ * upright as a PNG. job: { src, dst }. Returns { kept? , width, height, taken }.
+ */
+async function photoDecode(job) {
+  checkPaths(job);
+  const r = await runTool(OSASCRIPT, ['-l', 'JavaScript', path.join(JXA, 'photo.js'), JSON.stringify({ op: 'decode', src: job.src, dst: job.dst })], { timeoutMs: 5 * 60 * 1000 });
+  const out = parseResult(r, 'photo');
+  if (out.kept) return { kept: String(out.kept).slice(0, 120) };
+  return { width: out.width | 0, height: out.height | 0, taken: typeof out.taken === 'string' ? out.taken.slice(0, 32) : '' };
+}
+
+// CONVERT outputs the panel can't encode, written by macOS's sips from the panel's upright PNG.
+const SIPS_FORMAT = { heic: 'heic', tiff: 'tiff' };
+/** job: { src (PNG), dst, format: 'heic' | 'tiff', quality (1–100) }. */
+async function photoEncode(job) {
+  checkPaths(job);
+  const fmt = SIPS_FORMAT[job.format];
+  if (!fmt) throw new Error('Unknown format');
+  const opt = fmt === 'tiff' ? 'lzw' : String(Math.max(1, Math.min(100, job.quality | 0)));
+  const r = await runTool(SIPS, ['-s', 'format', fmt, '-s', 'formatOptions', opt, job.src, '--out', job.dst], { timeoutMs: 5 * 60 * 1000 });
+  if (r.code !== 0) throw new Error(`macOS couldn't write the ${fmt.toUpperCase()}: ${(r.stderr.trim().split('\n').pop() || `exit ${r.code}`).slice(0, 160)}`);
+}
+
+module.exports = { pdf, video, audio, photoDecode, photoEncode, runTool, stopAll, PDF_QUALITY, VIDEO_QUALITY, AUDIO_KBPS_PER_CHANNEL, VIDEO_TYPES };

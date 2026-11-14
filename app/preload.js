@@ -16,4 +16,10 @@ contextBridge.exposeInMainWorld('press', {
   onJpegJob: cb => ipcRenderer.on('jpeg-job', (_e, job) => cb(job)),
   jpegProgress: (id, progress) => ipcRenderer.send('jpeg-progress', { id, progress }),
   jpegResult: (id, result) => ipcRenderer.send('jpeg-result', { id, ...result }),
+  // CONVERT jobs run in the panel's web workers too; the watermark logo is picked with a file dialog.
+  onConvertJob: cb => ipcRenderer.on('convert-job', (_e, job) => cb(job)),
+  convertProgress: (id, progress) => ipcRenderer.send('convert-progress', { id, progress }),
+  convertResult: (id, result) => ipcRenderer.send('convert-result', { id, ...result }),
+  chooseLogo: () => ipcRenderer.invoke('choose-logo'),
+  convertInfo: () => ipcRenderer.invoke('convert-info'),
 });

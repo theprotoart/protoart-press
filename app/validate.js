@@ -6,7 +6,18 @@ const STRENGTH = ['gentle', 'balanced', 'aggressive'];
 const ENUMS = {
   outputMode: ['copy', 'replace'],
   metadata: ['keep', 'noGPS', 'stripAll'],
+  mode: ['compress', 'convert'],
 };
+// CONVERT's controls. size: pixels, or a negative number for a percentage.
+const CONVERT = {
+  format: ['jpeg', 'png', 'heic', 'webp', 'tiff'],
+  quality: [60, 70, 80, 85, 90, 95, 100],
+  size: [0, 3840, 2560, 1920, 1600, 1280, 1080, 800, -50, -25],
+  fit: ['long', 'width', 'height'],
+};
+const MARK = { kind: ['text', 'logo'], pos: [0, 1, 2, 3, 4, 5, 6, 7, 8], opacity: [25, 50, 75, 100], size: ['s', 'm', 'l'] };
+/** Free text from the panel: a short single line with no control characters. */
+const line = (v, max) => (typeof v === 'string' && v.length <= max && !/[\u0000-\u001f\u007f]/.test(v) ? v : undefined);
 const SIZE_STOPS = [0, 3840, 2560, 2048, 1920, 1600, 1280, 1024];
 const SAVING_STOPS = [1, 3, 5, 10];
 const BOOL = 'bool';
@@ -40,6 +51,23 @@ function settings(input) {
     }
     if (Object.keys(clean).length) out[mod] = clean;
   }
+  const conv = own(input, 'convert');
+  if (isPlainObject(conv)) {
+    const clean = {};
+    for (const [key, allowed] of Object.entries(CONVERT)) if (allowed.includes(own(conv, key))) clean[key] = conv[key];
+    const rename = line(own(conv, 'rename'), 120);
+    if (rename !== undefined) clean.rename = rename;
+    const mark = own(conv, 'mark');
+    if (isPlainObject(mark)) {
+      const m = {};
+      for (const [key, allowed] of Object.entries(MARK)) if (allowed.includes(own(mark, key))) m[key] = mark[key];
+      for (const key of ['on', 'dark']) if (typeof own(mark, key) === 'boolean') m[key] = mark[key];
+      const text = line(own(mark, 'text'), 80);
+      if (text !== undefined) m.text = text;
+      if (Object.keys(m).length) clean.mark = m;
+    }
+    if (Object.keys(clean).length) out.convert = clean;
+  }
   return out;
 }
 
@@ -67,4 +95,4 @@ function jpegBytes(data, originalLength) {
   return data[0] === 0xff && data[1] === 0xd8 && data[data.length - 2] === 0xff && data[data.length - 1] === 0xd9;
 }
 
-module.exports = { settings, paths, isId, isFraction, jpegBytes, ENUMS, MODULES, SIZE_STOPS, SAVING_STOPS };
+module.exports = { settings, paths, isId, isFraction, jpegBytes, ENUMS, MODULES, SIZE_STOPS, SAVING_STOPS, CONVERT, MARK };

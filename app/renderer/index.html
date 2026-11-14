@@ -19,7 +19,7 @@
     <div class="brand-sub">PRESS</div>
     <div class="brand-rule"></div>
     <div class="paint small">Model PA-2 · Media Compressor</div>
-    <div class="paint tiny">Image · PDF · Video · Audio</div>
+    <div class="paint tiny">Image · PDF · Video · Audio · Convert</div>
   </div>
 
   <!-- Status LEDs -->
@@ -103,6 +103,27 @@
           down (4K, 1440, 1080, 720, 540). <b>HEVC</b> is about a third smaller; <b>H.264</b> plays everywhere.
           Phone videos keep their orientation. HDR and copy-protected videos are left as they are for now.</p>
 
+          <h2>CONVERT · MODE</h2>
+          <p>Switch <b>MODE</b> to <b>CONVERT</b> to change photos instead of shrinking them. It reads JPEG, PNG,
+          HEIC, TIFF, WebP, AVIF, GIF, BMP, PSD and camera RAW, and writes:</p>
+          <ul>
+            <li><b>FORMAT</b>: JPEG (plays everywhere), PNG (every pixel, keeps transparency), HEIC (about half the size
+            of JPEG, for Apple devices), WEBP (for the web) or TIFF (lossless, for print and editing). <b>QUALITY</b> sets
+            JPEG, HEIC and WebP; 85 looks like the original for most photos.</li>
+            <li><b>SIZE</b> and <b>FIT</b>: shrink to a number of pixels along the long side, the width or the height,
+            or to 50% / 25%. FULL keeps the size, and nothing is ever enlarged.</li>
+            <li><b>RENAME</b>: a pattern for the new names. <b>NAME</b> is the original name, <b>#</b> numbers the files
+            in the order added (001, 002…), <b>DATE</b> is the day the photo was taken (or the file's date) and
+            <b>W×H</b> the new size. The line under it shows an example.</li>
+            <li><b>WATERMARK</b>: your text, or a logo (PNG with a transparent background works best), in any corner,
+            an edge or the centre, at 25–100% opacity, small, medium or large, in light or dark ink.</li>
+            <li><b>RECIPES</b>: name and <b>SAVE</b> every CONVERT setting, then pick it from the list next time.</li>
+          </ul>
+          <p>Results go into a "Converted" folder beside the originals (or replace them with REPLACE; originals go to
+          the Trash). Pictures come out upright and in standard sRGB color. Camera details (date, camera, lens) are
+          carried from JPEG to JPEG as the METADATA switch allows; other conversions start with no metadata, so a
+          location never comes along.</p>
+
           <h2>AUDIO · WAV, AIFF, FLAC, MP3, M4A</h2>
           <p><b>AAC</b> at 256 / 192 / 128 kbps for stereo (mono gets half), or <b>LOSSLESS</b> (Apple Lossless):
           bit-perfect and about half the size of WAV. Results are .m4a files. SAMPLE RATE can lower the rate
@@ -156,7 +177,7 @@
           </div>
         </section>
       </div>
-      <footer>ProtoArt Press · Model PA-2 · v2.1 · Everything runs on your Mac; nothing is uploaded. <span id="about-sandbox"></span></footer>
+      <footer>ProtoArt Press · Model PA-2 · v2.2 · Everything runs on your Mac; nothing is uploaded. <span id="about-sandbox"></span></footer>
     </div>
   </div>
 </div>

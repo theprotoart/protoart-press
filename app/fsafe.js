@@ -6,9 +6,13 @@ const path = require('path');
 const crypto = require('crypto');
 
 const OUTPUT_FOLDER = 'Pressed';
-// File types ProtoArt Press handles, by module.
+const CONVERT_FOLDER = 'Converted';
+// File types ProtoArt Press handles, by module. 'photo' files (HEIC, TIFF, WebP, RAW…) are only read by CONVERT.
 const KINDS = {
   '.jpg': 'jpeg', '.jpeg': 'jpeg', '.jpe': 'jpeg', '.png': 'png',
+  '.heic': 'photo', '.heif': 'photo', '.hif': 'photo', '.tif': 'photo', '.tiff': 'photo', '.webp': 'photo', '.avif': 'photo',
+  '.gif': 'photo', '.bmp': 'photo', '.psd': 'photo',
+  '.dng': 'photo', '.cr2': 'photo', '.cr3': 'photo', '.nef': 'photo', '.arw': 'photo', '.raf': 'photo', '.orf': 'photo', '.rw2': 'photo',
   '.pdf': 'pdf',
   '.mp4': 'video', '.m4v': 'video', '.mov': 'video',
   '.wav': 'audio', '.wave': 'audio', '.aif': 'audio', '.aiff': 'audio', '.aifc': 'audio',
@@ -32,7 +36,7 @@ function collect(paths) {
     try { st = fs.lstatSync(target); } catch { return; }
     if (st.isSymbolicLink()) return;
     if (st.isDirectory()) {
-      if (depth > MAX_DEPTH || path.basename(target) === OUTPUT_FOLDER) return;
+      if (depth > MAX_DEPTH || path.basename(target) === OUTPUT_FOLDER || path.basename(target) === CONVERT_FOLDER) return;
       const key = `${st.dev}:${st.ino}`;
       if (seen.has(key)) return;
       seen.add(key);
@@ -49,23 +53,24 @@ function collect(paths) {
 }
 
 /**
- * Returns the "Pressed" folder beside `srcFile`, creating it if needed. Refuses
+ * Returns the "Pressed" (or "Converted") folder beside `srcFile`, creating it if needed. Refuses
  * if it is a symlink, not a directory, or resolves anywhere other than directly
  * inside the source file's real folder.
  */
-async function outputDirFor(srcFile) {
+async function outputDirFor(srcFile, folder = OUTPUT_FOLDER) {
+  if (folder !== OUTPUT_FOLDER && folder !== CONVERT_FOLDER) throw new UnsafePathError('Bad output folder');
   const srcDir = path.dirname(srcFile);
-  const dir = path.join(srcDir, OUTPUT_FOLDER);
+  const dir = path.join(srcDir, folder);
   try {
     const st = await fs.promises.lstat(dir);
-    if (st.isSymbolicLink() || !st.isDirectory()) throw new UnsafePathError('"Pressed" is not a normal folder, so nothing was written');
+    if (st.isSymbolicLink() || !st.isDirectory()) throw new UnsafePathError(`"${folder}" is not a normal folder, so nothing was written`);
   } catch (err) {
     if (err instanceof UnsafePathError) throw err;
     if (err.code !== 'ENOENT') throw err;
     await fs.promises.mkdir(dir); // not recursive: the source folder must already exist
   }
   const [realDir, realSrc] = await Promise.all([fs.promises.realpath(dir), fs.promises.realpath(srcDir)]);
-  if (path.dirname(realDir) !== realSrc) throw new UnsafePathError('"Pressed" points outside this folder, so nothing was written');
+  if (path.dirname(realDir) !== realSrc) throw new UnsafePathError(`"${folder}" points outside this folder, so nothing was written`);
   return dir;
 }
 
@@ -200,5 +205,5 @@ async function isRegularFile(p) {
 
 module.exports = {
   collect, kindOf, outputDirFor, atomicWrite, writeTempBeside, placeFile, placeCopy, stageInto, freeName,
-  isRegularFile, UnsafePathError, OUTPUT_FOLDER, KINDS,
+  isRegularFile, UnsafePathError, OUTPUT_FOLDER, CONVERT_FOLDER, KINDS,
 };

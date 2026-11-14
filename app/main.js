@@ -28,26 +28,32 @@ const DEFAULTS = {
   pdf: { on: true, quality: 'balanced', dpi: 150, gray: false },
   video: { on: true, quality: 'balanced', maxEdge: 0, codec: 'hevc' },
   audio: { on: true, quality: 'balanced', sampleRate: 0, lossless: false },
+  mode: 'compress',
+  convert: { format: 'jpeg', quality: 85, size: 0, fit: 'long', rename: '{name}',
+    mark: { on: false, kind: 'text', text: '', pos: 8, opacity: 50, size: 'm', dark: false } },
 };
 let settings = structuredClone(DEFAULTS);
 function mergeSettings(clean) {
   for (const [k, v] of Object.entries(clean)) {
-    settings[k] = v && typeof v === 'object' ? { ...settings[k], ...v } : v;
+    if (k === 'convert') settings.convert = { ...settings.convert, ...v, mark: { ...settings.convert.mark, ...(v.mark || {}) } };
+    else settings[k] = v && typeof v === 'object' ? { ...settings[k], ...v } : v;
   }
 }
 
 // ------------------------------------------------------------------ Queue
 
 const MODULE_OF = { jpeg: 'image', png: 'image', pdf: 'pdf', video: 'video', audio: 'audio' };
-const BADGE = { jpeg: 'IMG', png: 'IMG', pdf: 'PDF', video: 'VID', audio: 'AUD' };
-const MAX_BYTES = { jpeg: 512 * 1024 ** 2, png: 512 * 1024 ** 2, pdf: 2 * 1024 ** 3, audio: 8 * 1024 ** 3, video: Infinity };
-const LIMIT = { jpeg: 2, png: 2, pdf: 1, video: 1, audio: 2 };
+const BADGE = { jpeg: 'IMG', png: 'IMG', pdf: 'PDF', video: 'VID', audio: 'AUD', convert: 'CNV' };
+const MAX_BYTES = { jpeg: 512 * 1024 ** 2, png: 512 * 1024 ** 2, pdf: 2 * 1024 ** 3, audio: 8 * 1024 ** 3, video: Infinity, convert: 512 * 1024 ** 2 };
+const LIMIT = { jpeg: 2, png: 2, pdf: 1, video: 1, audio: 2, convert: 2 };
+const CONVERTS = new Set(['jpeg', 'png', 'photo']); // what CONVERT reads
 
 let nextId = 1;
 const items = [];          // { id, path, name, kind, originalBytes, status, progress, newBytes, detail, output, outputName, batch }
 const pending = [];
 let batchStart = null;
-const running = { jpeg: 0, png: 0, pdf: 0, video: 0, audio: 0 };
+const running = { jpeg: 0, png: 0, pdf: 0, video: 0, audio: 0, convert: 0 };
+let batchSeq = 0;          // numbers CONVERT's {#} in the order files were added
 const claimed = new Map(); // output path -> source path, so two sources never write the same file
 
 function isWorking() { return pending.length > 0 || Object.values(running).some(n => n > 0); }
@@ -55,7 +61,7 @@ function isWorking() { return pending.length > 0 || Object.values(running).some(
 // What the panel sees: no full paths, just names and results.
 function publicItem(i) {
   return {
-    id: i.id, name: i.name, badge: BADGE[i.kind], originalBytes: i.originalBytes, status: i.status, progress: i.progress,
+    id: i.id, name: i.name, badge: BADGE[i.kind], converted: i.kind === 'convert', originalBytes: i.originalBytes, status: i.status, progress: i.progress,
     newBytes: i.newBytes, detail: i.detail, hasOutput: !!i.output, batch: i.batch,
     outputName: i.outputName && i.outputName !== i.name ? i.outputName : '',
   };
@@ -76,13 +82,16 @@ function addPaths(paths) {
   if (!isWorking()) {
     for (const it of items) it.batch = false;
     batchStart = Date.now();
+    batchSeq = 0;
   }
+  const converting = settings.mode === 'convert';
   const active = new Set(items.filter(i => i.status === 'queued' || i.status === 'working').map(i => i.path));
   for (const f of fsafe.collect(paths)) {
-    if (active.has(f.path) || !settings[MODULE_OF[f.kind]].on) continue; // module switched out
+    if (active.has(f.path)) continue;
+    if (converting ? !CONVERTS.has(f.kind) : f.kind === 'photo' || !settings[MODULE_OF[f.kind]].on) continue; // not for this mode, or module switched out
     const item = {
-      id: nextId++, path: f.path, name: path.basename(f.path), kind: f.kind, originalBytes: f.size,
-      status: 'queued', progress: 0, newBytes: 0, detail: '', output: null, outputName: '', batch: true,
+      id: nextId++, path: f.path, name: path.basename(f.path), kind: converting ? 'convert' : f.kind, originalBytes: f.size,
+      status: 'queued', progress: 0, newBytes: 0, detail: '', output: null, outputName: '', batch: true, seq: ++batchSeq,
     };
     items.push(item);
     pending.push(item);
@@ -93,6 +102,7 @@ function addPaths(paths) {
 
 /** A snapshot of the settings that apply to one file, taken when it starts. */
 function optionsFor(kind) {
+  if (kind === 'convert') return { ...structuredClone(settings.convert), metadata: settings.metadata, outputMode: settings.outputMode };
   const m = settings[MODULE_OF[kind]];
   const common = { minimumSavings: settings.minimumSavingsPercent / 100, metadata: settings.metadata, outputMode: settings.outputMode };
   if (kind === 'jpeg' || kind === 'png') {
@@ -129,7 +139,9 @@ async function run(item, opts) {
       return;
     }
     const onProgress = f => { item.progress = f; sendUpdate(); };
-    if (item.kind === 'jpeg' || item.kind === 'png') {
+    if (item.kind === 'convert') {
+      await runConvert(item, opts, stat, onProgress);
+    } else if (item.kind === 'jpeg' || item.kind === 'png') {
       const original = await fs.promises.readFile(item.path);
       const result = item.kind === 'png' ? await runPNG(original, opts, onProgress) : await runJPEG(original, opts, onProgress);
       await writeResult(item, original, result, opts.outputMode, stat);
@@ -254,6 +266,129 @@ async function sweepOldTemp() {
       if (st.isDirectory() && Date.now() - st.mtimeMs > 6 * 3600 * 1000) await fs.promises.rm(p, { recursive: true, force: true });
     }
   } catch { /* best effort */ }
+}
+
+// ------------------------------------------------------------------ CONVERT (format, size, name, watermark)
+
+// Pictures the panel decodes itself; everything else (HEIC, TIFF, RAW, PSD…) is opened by macOS first.
+const PANEL_TYPES = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.jpe': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp',
+  '.avif': 'image/avif', '.gif': 'image/gif', '.bmp': 'image/bmp' };
+const OUT_EXT = { jpeg: '.jpg', png: '.png', webp: '.webp', heic: '.heic', tiff: '.tif' };
+const FORMAT_NAME = { jpeg: 'JPEG', png: 'PNG', webp: 'WebP', heic: 'HEIC', tiff: 'TIFF' };
+const NATIVE_OUT = new Set(['heic', 'tiff']);
+
+const { convertName, looksLike, exifDay, isoDay } = require('./engine/convert');
+
+// The watermark logo, chosen with a file dialog. Only its name is shown in the panel.
+const LOGO_MAX = 10 * 1024 ** 2;
+let logoPath = null;
+const logoStore = () => path.join(app.getPath('userData'), 'convert-logo.json');
+async function loadLogoChoice() {
+  try {
+    const p = JSON.parse(await fs.promises.readFile(logoStore(), 'utf8')).path;
+    if (typeof p === 'string' && path.isAbsolute(p) && await fsafe.isRegularFile(p)) logoPath = p;
+  } catch { /* none chosen yet */ }
+}
+async function readLogo() {
+  if (!logoPath || !(await fsafe.isRegularFile(logoPath))) return null;
+  const buf = await fs.promises.readFile(logoPath);
+  if (buf.length > LOGO_MAX || !(looksLike('png', buf) || (buf[0] === 0xff && buf[1] === 0xd8))) return null;
+  return buf;
+}
+async function chooseLogo() {
+  if (!win) return null;
+  const r = await dialog.showOpenDialog(win, { buttonLabel: 'Use as Watermark', properties: ['openFile'],
+    filters: [{ name: 'PNG or JPEG logo', extensions: ['png', 'jpg', 'jpeg'] }] });
+  if (r.canceled || !r.filePaths[0]) return logoInfo();
+  const p = r.filePaths[0];
+  const st = await fs.promises.lstat(p).catch(() => null);
+  if (!st || !st.isFile() || st.size > LOGO_MAX) return { ...logoInfo(), error: 'Pick a PNG or JPEG under 10 MB' };
+  const head = Buffer.alloc(4);
+  const fh = await fs.promises.open(p, 'r'); try { await fh.read(head, 0, 4, 0); } finally { await fh.close(); }
+  if (!(looksLike('png', Buffer.concat([head, Buffer.alloc(12)])) || (head[0] === 0xff && head[1] === 0xd8))) return { ...logoInfo(), error: 'That file isn’t a PNG or JPEG' };
+  logoPath = p;
+  await fs.promises.writeFile(logoStore(), JSON.stringify({ path: p }), { mode: 0o600 }).catch(() => {});
+  return logoInfo();
+}
+const logoInfo = () => ({ logo: logoPath ? path.basename(logoPath).slice(0, 60) : '' });
+
+const convertJobs = new Map();
+function runConvertJob(bytes, opts, logo, onProgress) {
+  return new Promise((resolve, reject) => {
+    if (!win || win.isDestroyed()) return reject(new Error('Window closed'));
+    const id = jobSeq++;
+    convertJobs.set(id, { resolve, reject, onProgress, format: opts.format });
+    win.webContents.send('convert-job', { id, bytes, opts, logo });
+  });
+}
+
+async function runConvert(item, opts, stat, onProgress) {
+  const times = { atime: stat.atime, mtime: stat.mtime };
+  const ext = path.extname(item.path).toLowerCase();
+  const tmpDir = await fs.promises.mkdtemp(path.join(app.getPath('temp'), 'protoart-press-'));
+  try {
+    let bytes, srcType = PANEL_TYPES[ext], day = '';
+    if (srcType) {
+      bytes = await fs.promises.readFile(item.path);
+    } else {
+      const png = path.join(tmpDir, 'in.png');
+      const d = await media.photoDecode({ src: item.path, dst: png });
+      if (d.kept) { item.status = 'kept'; item.detail = d.kept; return; }
+      bytes = await fs.promises.readFile(png);
+      srcType = 'image/png'; day = exifDay(d.taken);
+    }
+    onProgress(0.1);
+    const native = NATIVE_OUT.has(opts.format);
+    const mark = { ...opts.mark };
+    const logo = mark.on && mark.kind === 'logo' ? await readLogo() : null;
+    const res = await runConvertJob(bytes, {
+      srcType, format: native ? 'png' : opts.format, quality: opts.quality, size: opts.size, fit: opts.fit, mark, metadata: opts.metadata,
+    }, logo, f => onProgress(0.1 + f * 0.75));
+    if (res.kept) { item.status = 'kept'; item.detail = res.kept; return; }
+    day = day || exifDay(res.taken) || isoDay(stat.mtime);
+
+    const outExt = OUT_EXT[opts.format];
+    const tmpOut = path.join(tmpDir, 'out' + outExt);
+    if (native) {
+      const png = path.join(tmpDir, 'enc.png');
+      await fs.promises.writeFile(png, res.data, { flag: 'wx', mode: 0o600 });
+      await media.photoEncode({ src: png, dst: tmpOut, format: opts.format, quality: opts.quality });
+    } else {
+      await fs.promises.writeFile(tmpOut, res.data, { flag: 'wx', mode: 0o600 });
+    }
+    const st = await fs.promises.lstat(tmpOut);
+    if (!st.isFile() || st.size === 0) throw new Error('The converter produced no file, so nothing was written');
+    onProgress(0.95);
+
+    const outName = convertName(opts.rename, { name: item.name, seq: item.seq || 1, day, width: res.width, height: res.height, ext: outExt });
+    if (opts.outputMode === 'replace') {
+      const dir = path.dirname(item.path);
+      if (outName === item.name) {
+        const temp = await fsafe.stageInto(tmpOut, dir);
+        await fs.promises.lutimes(temp, times.atime, times.mtime);
+        await swapInPlace(item, temp);
+      } else {
+        const name = await claimName(dir, outName, item.path, true);
+        item.output = await fsafe.placeFile(tmpOut, dir, name, times);
+        item.outputName = name;
+        try { await shell.trashItem(item.path); } catch { mark.trash = false; }
+      }
+    } else {
+      const dir = await fsafe.outputDirFor(item.path, fsafe.CONVERT_FOLDER);
+      const name = await claimName(dir, outName, item.path, false);
+      item.output = await fsafe.placeFile(tmpOut, dir, name, times);
+      item.outputName = name;
+    }
+    const from = (ext.slice(1) || '?').toUpperCase().replace('JPEG', 'JPG');
+    const bits = [`${from} → ${FORMAT_NAME[opts.format]}`, `${res.width}×${res.height}`,
+      opts.format === 'png' || opts.format === 'tiff' ? '' : `q${opts.quality}`,
+      res.carried ? '' : 'no metadata', res.note || '', mark.trash === false ? 'original kept (Trash unavailable)' : ''];
+    item.status = 'done';
+    item.newBytes = st.size;
+    item.detail = bits.filter(Boolean).join(' · ');
+  } finally {
+    await fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  }
 }
 
 // ------------------------------------------------------------------ PNG workers (Node)
@@ -414,6 +549,27 @@ on('jpeg-result', msg => {
   job.resolve({ data: Buffer.from(msg.data), detail });
 });
 
+on('convert-progress', msg => {
+  if (!msg || !validate.isId(msg.id) || !validate.isFraction(msg.progress)) return;
+  const job = convertJobs.get(msg.id);
+  if (job) job.onProgress(msg.progress);
+});
+
+on('convert-result', msg => {
+  if (!msg || !validate.isId(msg.id)) return;
+  const job = convertJobs.get(msg.id);
+  if (!job) return;
+  convertJobs.delete(msg.id);
+  if (typeof msg.error === 'string') return job.reject(new Error(msg.error.slice(0, 300)));
+  if (typeof msg.kept === 'string') return job.resolve({ kept: msg.kept.slice(0, 120) });
+  const size = v => (Number.isSafeInteger(v) && v > 0 && v <= 100000 ? v : 0);
+  const width = size(msg.width), height = size(msg.height);
+  if (!width || !height || !looksLike(job.format, msg.data)) return job.reject(new Error('The converter returned an invalid file, so nothing was written'));
+  job.resolve({ data: Buffer.from(msg.data), width, height,
+    taken: typeof msg.taken === 'string' ? msg.taken.slice(0, 32) : '', carried: msg.carried === true,
+    note: typeof msg.note === 'string' ? msg.note.slice(0, 60) : '' });
+});
+
 on('settings', s => mergeSettings(validate.settings(s)));
 on('add-paths', p => { const clean = validate.paths(p); if (clean) addPaths(clean); });
 on('clear', () => {
@@ -429,13 +585,17 @@ on('reveal', id => {
   if (item && item.output) shell.showItemInFolder(item.output);
 });
 ipcMain.handle('choose', event => (fromPanel(event) ? choose() : undefined));
+ipcMain.handle('choose-logo', event => (fromPanel(event) ? chooseLogo() : undefined));
+ipcMain.handle('convert-info', event => (fromPanel(event) ? logoInfo() : undefined));
 
 async function choose() {
   if (!win) return;
   const r = await dialog.showOpenDialog(win, {
-    buttonLabel: 'Press',
+    buttonLabel: settings.mode === 'convert' ? 'Convert' : 'Press',
     properties: ['openFile', 'openDirectory', 'multiSelections'],
-    filters: [{ name: 'Images, PDFs, video and audio', extensions: Object.keys(fsafe.KINDS).map(e => e.slice(1)) }],
+    filters: [settings.mode === 'convert'
+      ? { name: 'Pictures', extensions: Object.entries(fsafe.KINDS).filter(([, k]) => CONVERTS.has(k)).map(([e]) => e.slice(1)) }
+      : { name: 'Images, PDFs, video and audio', extensions: Object.entries(fsafe.KINDS).filter(([, k]) => k !== 'photo').map(([e]) => e.slice(1)) }],
   });
   if (!r.canceled) addPaths(r.filePaths);
 }
@@ -568,12 +728,15 @@ function createWindow() {
     win = null;
     for (const job of jpegJobs.values()) job.reject(new Error('Window closed'));
     jpegJobs.clear();
+    for (const job of convertJobs.values()) job.reject(new Error('Window closed'));
+    convertJobs.clear();
   });
 }
 
 app.whenReady().then(() => {
   protocol.handle('app', servePanelFile);
   sweepOldTemp();
+  loadLogoChoice();
   lockDownSession();
   buildMenu();
   createWindow();

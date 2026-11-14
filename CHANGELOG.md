@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.2.0: CONVERT
+
+- **MODE · CONVERT**: a new mode beside COMPRESS that changes photos instead of shrinking them. It reads JPEG, PNG,
+  HEIC, TIFF, WebP, AVIF, GIF, BMP, PSD and camera RAW (DNG, CR2, CR3, NEF, ARW, RAF, ORF, RW2), and writes JPEG,
+  PNG, HEIC, WebP or TIFF, with a QUALITY knob for the lossy formats.
+- **SIZE and FIT**: shrink to a pixel size along the long side, the width or the height, or to 50% / 25%. Never enlarges.
+- **RENAME** with a pattern: the original name, a number in the order added (001…), the day the photo was taken, the
+  new width and height. Characters that can't be in a file name become "-".
+- **WATERMARK**: text or a logo (PNG or JPEG), nine positions, 25–100% opacity, three sizes, light or dark ink.
+- **RECIPES**: save every CONVERT setting under a name and pick it again later.
+- Results go into a "Converted" folder (or REPLACE, with originals to the Trash), upright and in sRGB. Camera details
+  carry over from JPEG to JPEG as METADATA allows; other conversions carry none, so a location never comes along.
+- How it works: the panel's own image engine decodes, resizes (the same Lanczos filter as COMPRESS), watermarks and
+  encodes JPEG, PNG and WebP; HEIC, TIFF and RAW are opened by macOS's Core Image, and HEIC and TIFF are written by
+  macOS's `sips`. Nothing new is downloaded or installed, and Press still makes no network connections.
+
 ## 2.1.1
 
 - The window fits smaller screens: where the screen has less room than the panel (a 13" MacBook at a larger text
