@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.2.1: a safer video engine
+
+- **Video has a new native engine.** The old one (a JavaScript-for-Automation script) never freed the video frames
+  it decoded, so a long or large video could use up the Mac's memory until macOS froze or restarted. The new engine
+  is a small Swift program that frees each frame as soon as it's encoded: memory stays flat (about 20 MB) however
+  long the video. A 2.3 GB, 1080p MP4 now presses in about 8 minutes with nothing else on the Mac slowing down.
+- **Memory guard**: while a video encodes, Press checks the engine every second and stops it if it ever uses more
+  than a third of the Mac's memory or macOS reports critically low memory. The file is then marked "Stopped" and
+  nothing is written.
+- The video engine runs at low priority, so the rest of the Mac stays responsive.
+- Videos with transparency (HEVC with alpha, as Procreate, Motion and Final Cut export) are kept as they are
+  instead of failing; re-encoding would lose the see-through parts. Videos that macOS can't decode straight to
+  the usual frame format get a second try with full RGB frames.
+- Building from source now needs Apple's command line tools (`xcode-select --install`) to compile the video engine.
+
 ## 2.2.0: CONVERT
 
 - **MODE · CONVERT**: a new mode beside COMPRESS that changes photos instead of shrinking them. It reads JPEG, PNG,

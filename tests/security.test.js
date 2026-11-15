@@ -213,3 +213,26 @@ test('2.0: helper programs are fixed absolute system paths and spawned without a
   assert.match(src, /const \{ spawn \} = require\('child_process'\);/);
   for (const m of src.matchAll(/const (OSASCRIPT|AFCONVERT|AFINFO) = '([^']+)'/g)) assert.ok(m[2].startsWith('/usr/bin/'), m[2]);
 });
+
+// ---------------------------------------------------------------- 2.2.1: native video engine
+test('video uses the native engine, never the old JXA script', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'app', 'engine', 'media.js'), 'utf8');
+  assert.ok(!fs.existsSync(path.join(__dirname, '..', 'app', 'engine', 'jxa', 'video.js')));
+  assert.ok(fs.existsSync(path.join(__dirname, '..', 'native', 'press-video.swift')));
+  assert.ok(!/jxa', 'video\.js'|JXA, 'video\.js'/.test(src));
+  assert.match(src, /guard: true/);
+});
+
+test('video refuses a missing or relative temp folder', async () => {
+  const media = require('../app/engine/media.js');
+  await assert.rejects(media.video({ src: '/a.mp4', dst: '/b.mp4', quality: 'balanced' }, () => {}), /Bad temp folder/);
+  await assert.rejects(media.video({ src: '/a.mp4', dst: '/b.mp4', tmpDir: 'rel', quality: 'balanced' }, () => {}), /Bad temp folder/);
+});
+
+test('memory guard stops a runaway helper and says why', async () => {
+  const media = require('../app/engine/media.js');
+  // On Linux test machines sysctl/ps may differ; only the plumbing is checked: a normal exit isn't "stopped".
+  const r = await media.runTool(process.execPath, ['-e', 'setTimeout(()=>{}, 1200)'], { guard: true });
+  assert.strictEqual(r.code, 0);
+  assert.strictEqual(r.stopped, null);
+});

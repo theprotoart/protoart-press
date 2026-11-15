@@ -4,6 +4,7 @@
 // caller then moves into place with fsafe. No Electron imports (unit-testable).
 'use strict';
 const { spawn } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 
 const OSASCRIPT = '/usr/bin/osascript';
@@ -11,6 +12,9 @@ const AFCONVERT = '/usr/bin/afconvert';
 const AFINFO = '/usr/bin/afinfo';
 const SIPS = '/usr/bin/sips';
 const JXA = path.join(__dirname, 'jxa');
+// The native video engine (native/press-video.swift), compiled by the build script.
+const VIDEO_BIN = path.join(__dirname, 'bin', 'press-video');
+const NICE = '/usr/bin/nice';
 
 // What each STRENGTH/QUALITY button means per format.
 const PDF_QUALITY = { gentle: 0.85, balanced: 0.75, aggressive: 0.6 };
@@ -20,8 +24,35 @@ const VIDEO_TYPES = { '.mp4': 'public.mpeg-4', '.m4v': 'com.apple.m4v-video', '.
 
 const children = new Set();
 
-/** Runs a program without a shell. Resolves { code, stdout, stderr }; never rejects on exit code. */
-function runTool(file, args, { onLine, timeoutMs = 0 } = {}) {
+/** Output of a short system query (fixed path, no shell, empty environment); '' on any failure. */
+function query(file, args) {
+  return new Promise(resolve => {
+    let out = '';
+    let child;
+    try { child = spawn(file, args, { shell: false, stdio: ['ignore', 'pipe', 'ignore'], env: {} }); } catch { resolve(''); return; }
+    const t = setTimeout(() => child.kill('SIGKILL'), 5000);
+    child.stdout.on('data', d => { if (out.length < 4096) out += d; });
+    child.on('error', () => { clearTimeout(t); resolve(''); });
+    child.on('close', () => { clearTimeout(t); resolve(out.trim()); });
+  });
+}
+/** One `sysctl -n` number (null if unavailable). */
+async function sysctl(name) {
+  const n = Number(await query('/usr/sbin/sysctl', ['-n', name]));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+/** Resident memory of a process in bytes (null if unavailable). */
+async function rssOf(pid) {
+  const kb = Number(await query('/bin/ps', ['-o', 'rss=', '-p', String(pid)]));
+  return Number.isFinite(kb) && kb > 0 ? kb * 1024 : null;
+}
+
+/**
+ * Runs a program without a shell. Resolves { code, stdout, stderr, stopped }; never rejects on exit code.
+ * `guard`: checks every second and stops the helper (setting `stopped` to why) if it uses more than a third of
+ * this Mac's memory, or if macOS reports critically low memory: a runaway encode must never take the Mac down.
+ */
+function runTool(file, args, { onLine, timeoutMs = 0, guard = false } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(file, args, {
       shell: false, stdio: ['ignore', 'pipe', 'pipe'],
@@ -40,10 +71,25 @@ function runTool(file, args, { onLine, timeoutMs = 0 } = {}) {
       for (const l of lines) onLine(l);
     });
     if (timeoutMs) timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
-    child.on('error', err => { children.delete(child); clearTimeout(timer); reject(err); });
+    let stopped = null, watch = null;
+    if (guard) {
+      const capP = sysctl('hw.memsize').then(m => (m ? Math.max(m / 3, 2 * 1024 ** 3) : 4 * 1024 ** 3));
+      let busy = false;
+      watch = setInterval(async () => {
+        if (busy || stopped) return;
+        busy = true;
+        try {
+          const [cap, rss, pressure] = await Promise.all([capP, rssOf(child.pid), sysctl('kern.memorystatus_vm_pressure_level')]);
+          if (rss && rss > cap) stopped = `Stopped: the video engine was using too much memory (${(rss / 1e9).toFixed(1)} GB). Nothing was written`;
+          else if (pressure === 4) stopped = 'Stopped: your Mac was running out of memory. Nothing was written';
+          if (stopped) child.kill('SIGKILL');
+        } finally { busy = false; }
+      }, 1000);
+    }
+    child.on('error', err => { children.delete(child); clearTimeout(timer); clearInterval(watch); reject(err); });
     child.on('close', (code, signal) => {
-      children.delete(child); clearTimeout(timer);
-      resolve({ code, signal, stdout, stderr });
+      children.delete(child); clearTimeout(timer); clearInterval(watch);
+      resolve({ code, signal, stdout, stderr, stopped });
     });
   });
 }
@@ -93,11 +139,18 @@ async function pdf(job, onProgress) {
   } finally { stop(); }
 }
 
-/** job: { src, dst, quality, maxEdge, codec, metadata }. */
+/**
+ * job: { src, dst, tmpDir, quality, maxEdge, codec, metadata }. The native engine frees each frame as it goes
+ * (the earlier JavaScript-for-Automation engine didn't, and a long encode could exhaust the Mac's memory). It is
+ * copied into the private temp folder and run from there at low priority, under the memory guard.
+ */
 async function video(job, onProgress) {
   checkPaths(job);
+  if (typeof job.tmpDir !== 'string' || !path.isAbsolute(job.tmpDir)) throw new Error('Bad temp folder');
   const ext = path.extname(job.dst).toLowerCase();
-  const r = await runTool(OSASCRIPT, ['-l', 'JavaScript', path.join(JXA, 'video.js'), JSON.stringify({
+  const engine = path.join(job.tmpDir, 'press-video');
+  await fs.promises.writeFile(engine, await fs.promises.readFile(VIDEO_BIN), { mode: 0o700, flag: 'wx' });
+  const r = await runTool(NICE, ['-n', '10', engine, JSON.stringify({
     src: job.src, dst: job.dst, fileType: VIDEO_TYPES[ext] || VIDEO_TYPES['.mp4'],
     codec: job.codec === 'h264' ? 'h264' : 'hevc', quality: VIDEO_QUALITY[job.quality] || VIDEO_QUALITY.balanced,
     maxEdge: job.maxEdge || 0, metadata: job.metadata,
@@ -106,7 +159,9 @@ async function video(job, onProgress) {
     keyframeSeconds: 5, audioKbps: 160,
   })], {
     onLine: l => { const m = /^PROGRESS ([\d.]+)$/.exec(l.trim()); if (m) onProgress(Math.min(0.99, +m[1])); },
+    guard: true,
   });
+  if (r.stopped) throw new Error(r.stopped);
   const out = parseResult(r, 'video');
   if (out.kept) return { kept: out.kept };
   const bits = [job.codec === 'h264' ? 'H.264' : 'HEVC', `${out.width}×${out.height}`, out.audio || ''];

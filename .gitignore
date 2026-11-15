@@ -1,6 +1,9 @@
 # dependencies
 node_modules/
 
+# the native video engine is compiled from native/press-video.swift by the build script
+app/engine/bin/
+
 # build output (publish DMGs as GitHub Release assets, not in the repo)
 dist/
 *.app/

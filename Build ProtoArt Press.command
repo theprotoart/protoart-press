@@ -36,6 +36,12 @@ for candidate in "$ROOT/node_modules/@electron/fuses/dist/bin.js" "$(dirname "$(
 done
 [ -n "$FUSES" ] || fail "@electron/fuses not found. Run: npm ci"
 command -v node >/dev/null 2>&1 || fail "Node.js is needed to set Electron fuses"
+echo "Video engine (native Swift)…"
+xcrun --version >/dev/null 2>&1 || fail "Apple's command line tools are missing (run: xcode-select --install)"
+mkdir -p "$ROOT/app/engine/bin"
+(cd "$ROOT/native" && xcrun swiftc -O -target arm64-apple-macos13.0 press-video.swift -o ../app/engine/bin/press-video) || fail "the video engine didn't compile"
+codesign --force --sign - "$ROOT/app/engine/bin/press-video" >/dev/null 2>&1 || fail "couldn't sign the video engine"
+if strings "$ROOT/app/engine/bin/press-video" | grep -q "$HOME"; then fail "the video engine contains a personal path"; fi
 
 step "2/6 App shell"
 osascript -e "tell application \"$APP_NAME\" to quit" >/dev/null 2>&1 || true

@@ -25,7 +25,9 @@ a stepped size knob and a format choice:
 - **Video (MP4, MOV, M4V):** re-encodes the picture with Apple's hardware HEVC or H.264 encoder at a
   constant quality with a keyframe at least every 5 s; compressed audio is copied untouched and
   uncompressed audio becomes 160 kbps AAC; rotation is kept; optional downscale (4K–540p).
-  HDR and copy-protected videos are skipped for now.
+  The engine is a small native program that frees each frame as it goes, runs at low priority, and is
+  stopped if it ever uses too much memory. HDR, copy-protected and transparent (HEVC with alpha) videos
+  are kept as they are.
 - **Audio (WAV, AIFF, FLAC, MP3, M4A, CAF):** AAC at 256/192/128 kbps (stereo) or Apple Lossless,
   optional lower sample rate; output is `.m4a`. Tags aren't carried over yet.
 - **Global:** minimum saving (1/3/5/10%), output to a `Pressed` folder or replace in place (originals go
@@ -50,6 +52,9 @@ a stepped size knob and a format choice:
 
 ## Build from source
 
+Needs Node.js 22+ and Apple's command line tools (`xcode-select --install`), which compile the native
+video engine.
+
 ```bash
 npm ci                 # pinned build tools (Electron 44.7.0, @electron/fuses)
 npx install-electron   # downloads Electron and verifies its published checksum
@@ -58,7 +63,7 @@ npm run build          # makes "ProtoArt Press.app" (or double-click "Build Prot
 npm run dmg            # optional: tests, builds and packs dist/ProtoArt-Press-<version>.dmg
 ```
 
-The build copies Electron, adds the app files, removes unused permission entries, sets Electron fuses
+The build compiles the video engine from `native/press-video.swift`, copies Electron, adds the app files, removes unused permission entries, sets Electron fuses
 (no Node mode, no `NODE_OPTIONS` or inspector flags, no extra `file://` privileges), adds license
 notices and signs the app ad hoc. It stops if any step fails.
 
@@ -71,6 +76,8 @@ notices and signs the app ad hoc. It stops if any step fails.
 | `app/validate.js` | Validation for everything the panel sends to the main process |
 | `app/preload.js` | The narrow bridge the panel can use (sandboxed) |
 | `app/engine/` | SSIM, resizing, PNG decoder/encoder/quantizer and optimizer (plain JS + Node zlib) |
+| `app/engine/media.js` | PDF, video and audio: runs macOS's own tools and the native video engine as child processes (no shell), with a memory guard for video |
+| `native/press-video.swift` | The video engine (AVFoundation), compiled into `app/engine/bin/` by the build |
 | `app/renderer/` | The rack panel and the JPEG worker (Chromium's codecs) |
 | `tests/` | `node --test` suites |
 
